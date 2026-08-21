@@ -1,0 +1,126 @@
+﻿@page "/login"
+@inject IAuthService AuthService
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@using System.Security.Claims
+@using LibraryManagementSystem.Client.Providers
+@using LibraryManagementSystem.Client.Services
+@using LibraryManagementSystem.Shared.DTOs.Auth
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="d-flex align-center justify-center" Style="height: 100vh;">
+    <MudCard Elevation="4" Class="pa-6 w-100">
+        <MudCardContent>
+            <div class="text-center mb-6">
+                <MudIcon Icon="@Icons.Material.Filled.LocalLibrary" Color="Color.Primary" Size="Size.Large" Class="mb-2" />
+                <MudText Typo="Typo.h4" Color="Color.Primary" Class="font-weight-bold">LMS Login</MudText>
+                <MudText Typo="Typo.subtitle2">Silakan login untuk meminjam buku</MudText>
+            </div>
+
+            <EditForm Model="loginRequest" OnValidSubmit="HandleLogin">
+                <DataAnnotationsValidator />
+                
+                <MudTextField @bind-Value="loginRequest.Email"
+                              Label="Email"
+                              Variant="Variant.Outlined"
+                              Class="mb-4"
+                              For="@(() => loginRequest.Email)" />
+
+                <MudTextField @bind-Value="loginRequest.Password"
+                              Label="Password"
+                              Variant="Variant.Outlined"
+                              InputType="InputType.Password"
+                              Class="mb-6"
+                              For="@(() => loginRequest.Password)" />
+
+                <MudButton ButtonType="ButtonType.Submit"
+                           Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           Size="Size.Large"
+                           FullWidth="true"
+                           Disabled="isLoading">
+                    @if (isLoading)
+                    {
+                        <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true" />
+                        <MudText Class="ms-2">Memproses...</MudText>
+                    }
+                    else
+                    {
+                        <MudText>Login</MudText>
+                    }
+                </MudButton>
+            </EditForm>
+        </MudCardContent>
+    </MudCard>
+</MudContainer>
+
+@code {
+    private LoginRequest loginRequest = new();
+    private bool isLoading = false;
+
+    [Inject]
+    private AuthenticationStateProvider AuthStateProvider { get; set; } = default!;
+
+    private async Task HandleLogin()
+    {
+        isLoading = true;
+        try
+        {
+            var response = await AuthService.LoginAsync(loginRequest);
+
+            if (response.IsSuccess && response.Data != null)
+            {
+                if (AuthStateProvider is CustomAuthStateProvider customAuthProvider)
+                {
+                    customAuthProvider.NotifyUserAuthentication(response.Data.Token);
+                }
+
+                var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+                var user = authState.User;
+
+                var userName = user.FindFirst(ClaimTypes.Name)?.Value
+                                ?? user.FindFirst("name")?.Value
+                                ?? user.Identity?.Name
+                                ?? "Pengguna";
+
+                Snackbar.Add($"Login Berhasil! Selamat Datang, {userName}.", Severity.Success);
+
+                await Task.Delay(3000);
+
+                if (user.IsInRole("Admin"))
+                {
+                    Navigation.NavigateTo("/admin/dashboard", forceLoad: true);
+                }
+                else
+                {
+                    Navigation.NavigateTo("/", forceLoad: true);
+                }
+            }
+            else
+            {
+                string errorMsg = "Email atau password salah / Invalid credentials.";
+                
+                if (response != null)
+                {
+                    if (response.Errors != null && response.Errors.Any())
+                    {
+                        errorMsg = string.Join(", ", response.Errors);
+                    }
+                    else if (!string.IsNullOrEmpty(response.Message))
+                    {
+                        errorMsg = response.Message;
+                    }
+                }
+
+                Snackbar.Add(errorMsg, Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Terjadi kesalahan jaringan: " + ex.Message, Severity.Error);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+}

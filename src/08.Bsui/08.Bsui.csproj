@@ -1,9 +1,13 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <ItemGroup>
-	<ProjectReference Include="..\01.Base\01.Base.csproj" /> 
-    <ProjectReference Include="..\06.WebAPI\06.WebAPI.csproj" /> 
     <ProjectReference Include="..\07.Client\07.Client.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MudBlazor" Version="9.8.0" />
+	<PackageReference Include="Blazored.LocalStorage" Version="4.5.0" />
+	<PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.22.0" />
   </ItemGroup>
 
   <PropertyGroup>

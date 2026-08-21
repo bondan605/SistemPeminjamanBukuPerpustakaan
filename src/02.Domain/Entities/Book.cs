@@ -10,6 +10,7 @@ public class Book : BaseEntity
     public int PublishedYear { get; set; }
     public string? Description { get; set; }
     public int Stock { get; set; }
+    public string? ImageUrl { get; set; }
 
     public ICollection<BorrowRequest> BorrowRequests { get; set; } = new List<BorrowRequest>();
 }

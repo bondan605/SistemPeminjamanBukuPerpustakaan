@@ -1,0 +1,202 @@
+﻿@page "/admin/dashboard"
+@using LibraryManagementSystem.Client.Services.Implementations
+@using Microsoft.AspNetCore.Components.Authorization
+@using LibraryManagementSystem.Shared.DTOs.Admin
+@using LibraryManagementSystem.Client.Services
+
+@inject IAdminService AdminService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-8 mb-16">
+    <div class="d-flex justify-space-between align-center mb-8">
+        <div>
+            <MudText Typo="Typo.h4" Class="font-weight-bold">Dashboard Admin</MudText>
+            <MudText Typo="Typo.subtitle1">Ringkasan aktivitas perpustakaan Anda hari ini.</MudText>
+        </div>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.LibraryBooks" Href="/admin/requests">
+            Kelola Peminjaman
+        </MudButton>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="d-flex justify-center my-12">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
+        </div>
+    }
+    else if (stats != null)
+    {
+        <MudGrid Class="mb-8">
+            <MudItem xs="12" sm="6" md="3">
+                <MudPaper Elevation="3" Class="pa-4 rounded-lg d-flex align-center mud-theme-primary">
+                    <MudIcon Icon="@Icons.Material.Filled.MenuBook" Style="font-size: 3rem;" Class="mr-4" />
+                    <div>
+                        <MudText Typo="Typo.h4" Class="font-weight-bold">@stats.TotalBooks</MudText>
+                        <MudText Typo="Typo.body2" Class="font-weight-bold">Total Buku</MudText>
+                        <MudText Typo="Typo.caption" Style="opacity: 0.85;">Dari @stats.TotalJudul Judul Berbeda</MudText>
+                    </div>
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" sm="6" md="3">
+                <MudPaper Elevation="3" Class="pa-4 rounded-lg d-flex align-center mud-theme-info">
+                    <MudIcon Icon="@Icons.Material.Filled.AssignmentTurnedIn" Style="font-size: 3rem;" Class="mr-4" />
+                    <div>
+                        <MudText Typo="Typo.h4" Class="font-weight-bold">@stats.TotalBorrowedBooks</MudText>
+                        <MudText Typo="Typo.body2">Sedang Dipinjam</MudText>
+                    </div>
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" sm="6" md="3">
+                <MudPaper Elevation="3" Class="pa-4 rounded-lg d-flex align-center mud-theme-success">
+                    <MudIcon Icon="@Icons.Material.Filled.PeopleAlt" Style="font-size: 3rem;" Class="mr-4" />
+                    <div>
+                        <MudText Typo="Typo.h4" Class="font-weight-bold">@stats.TotalUsers</MudText>
+                        <MudText Typo="Typo.body2">Total Pengguna</MudText>
+                    </div>
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" sm="6" md="3">
+                <MudPaper Elevation="3" Class="pa-4 rounded-lg d-flex align-center mud-theme-warning">
+                    <MudIcon Icon="@Icons.Material.Filled.PendingActions" Style="font-size: 3rem;" Class="mr-4" />
+                    <div>
+                        <MudText Typo="Typo.h4" Class="font-weight-bold">@stats.PendingRequests</MudText>
+                        <MudText Typo="Typo.body2">Request Menunggu</MudText>
+                    </div>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        <MudGrid>
+            <MudItem xs="12" md="6">
+                <MudPaper Elevation="3" Class="pa-6 rounded-lg h-100">
+                    <MudText Typo="Typo.h6" Class="font-weight-bold mb-4">Distribusi Status Peminjaman</MudText>
+                    
+                    @if (isLoading)
+                    {
+                        <div class="d-flex justify-center align-center" style="height: 300px;">
+                            <MudText Color="Color.Secondary">Memuat grafik...</MudText>
+                        </div>
+                    }
+                    else if (data != null && data.Sum() > 0)
+                    {
+                        <div class="d-flex justify-center">
+                            <MudChart T="double" ChartType="ChartType.Donut"
+                                      ChartSeries="@([data])"
+                                      ChartLabels="@labels"
+                                      Width="100%"
+                                      Height="300px">
+                            </MudChart>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="d-flex flex-column justify-center align-center" style="height: 300px; opacity: 0.5;">
+                            <MudIcon Icon="@Icons.Material.Filled.PieChartOutline" Style="font-size: 5rem;" Class="mb-3" />
+                            <MudText Color="Color.Secondary">Belum ada data untuk ditampilkan.</MudText>
+                        </div>
+                    }
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" md="6">
+                <MudPaper Elevation="3" Class="pa-6 rounded-lg h-100 bg-light">
+                    <MudText Typo="Typo.h6" Class="font-weight-bold mb-4">Notifikasi & Aksi Cepat</MudText>
+                    
+                    @if (stats.PendingRequests > 0)
+                    {
+                        <MudAlert Severity="Severity.Warning" Class="mb-6" Variant="Variant.Filled">
+                            Terdapat <b>@stats.PendingRequests</b> pengajuan peminjaman baru yang butuh persetujuan Anda!
+                        </MudAlert>
+                        <MudButton Variant="Variant.Filled" Color="Color.Warning" Href="/admin/requests" FullWidth="true" Class="mb-4 py-3 font-weight-bold">
+                            Tinjau Request Sekarang
+                        </MudButton>
+                    }
+                    else
+                    {
+                        <MudAlert Severity="Severity.Success" Class="mb-6" Variant="Variant.Filled">
+                            Semua pengajuan peminjaman sudah diproses. Tidak ada tugas tertunda!
+                        </MudAlert>
+                    }
+                    
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="/books" FullWidth="true" StartIcon="@Icons.Material.Filled.Add" Class="py-3">
+                        Kelola Katalog Buku
+                    </MudButton>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    }
+</MudContainer>
+
+@code {
+    private DashboardStatsDto? stats;
+    private bool isLoading = true;
+    
+    // Default berikan angka agar tidak error saat render awal
+    public double[] data = new double[] { 0, 0, 0 };
+    public string[] labels = { "Buku Dipinjam", "Request Pending", "Sisa Buku" };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // 1. Validasi Akses Admin
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity == null || !user.Identity.IsAuthenticated)
+        {
+            Navigation.NavigateTo("/login", forceLoad: true);
+            return;
+        }
+
+        var userRole = user.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value
+                       ?? user.FindFirst("role")?.Value;
+
+        if (string.IsNullOrEmpty(userRole) || !userRole.Equals("Admin", StringComparison.OrdinalIgnoreCase))
+        {
+            Snackbar.Add("Akses ditolak! Halaman ini khusus Admin.", Severity.Error);
+            Navigation.NavigateTo("/", forceLoad: true);
+            return;
+        }
+        
+        await LoadStats();
+    }
+
+    private async Task LoadStats()
+    {
+        try
+        {
+            var response = await AdminService.GetDashboardStatsAsync();
+            
+            if (response != null && response.IsSuccess && response.Data != null)
+            {
+                stats = response.Data;
+                int estimasiSisaBuku = (stats.TotalBooks > stats.TotalBorrowedBooks)
+                                     ? stats.TotalBooks - stats.TotalBorrowedBooks
+                                     : 0;
+
+                data = new double[]
+                {
+                stats.TotalBorrowedBooks,
+                stats.PendingRequests,
+                estimasiSisaBuku
+                };
+            }
+            else
+            {
+                Snackbar.Add(response?.Message ?? "Gagal memuat statistik", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Terjadi kesalahan jaringan: " + ex.Message, Severity.Error);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+}

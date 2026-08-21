@@ -1,0 +1,290 @@
+﻿@page "/books/edit/{Id:int}"
+@using LibraryManagementSystem.Shared.DTOs.Books
+@using LibraryManagementSystem.Client.Services
+@using Microsoft.AspNetCore.Components.Forms
+@inject IBookService BookService
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-8 mb-16">
+    <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack" Href="@($"/books/{Id}")" Class="mb-4">
+        Kembali ke Detail Buku
+    </MudButton>
+
+    @if (isLoading)
+    {
+        <div class="d-flex justify-center my-12">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
+        </div>
+    }
+    else
+    {
+        <MudPaper Elevation="3" Class="pa-8 rounded-lg">
+            <MudText Typo="Typo.h4" Class="font-weight-bold mb-6">Edit Data Buku</MudText>
+
+            <EditForm Model="@updateModel" OnValidSubmit="HandleUpdateBook">
+                <DataAnnotationsValidator />
+
+                <MudGrid>
+                    <MudItem xs="12" md="6">
+                        <MudTextField Label="Judul Buku"
+                                      @bind-Value="updateModel.Title"
+                                      For="@(() => updateModel.Title)"
+                                      Variant="Variant.Outlined"
+                                      Class="mb-4" />
+                    </MudItem>
+
+                    <MudItem xs="12" md="6">
+                        <MudTextField Label="Penulis"
+                                      @bind-Value="updateModel.Author"
+                                      For="@(() => updateModel.Author)"
+                                      Variant="Variant.Outlined"
+                                      Class="mb-4" />
+                    </MudItem>
+
+                    <MudItem xs="12" md="6">
+                        <MudTextField Label="Kategori"
+                                      @bind-Value="updateModel.Category"
+                                      For="@(() => updateModel.Category)"
+                                      Variant="Variant.Outlined"
+                                      Class="mb-4" />
+                    </MudItem>
+
+                    <MudItem xs="12" md="6">
+                        <MudTextField Label="ISBN"
+                                      @bind-Value="updateModel.Isbn"
+                                      For="@(() => updateModel.Isbn)"
+                                      Variant="Variant.Outlined"
+                                      Class="mb-4" />
+                    </MudItem>
+
+                    <MudItem xs="12" md="6">
+                        <MudNumericField Label="Tahun Terbit"
+                                         @bind-Value="updateModel.PublishedYear"
+                                         For="@(() => updateModel.PublishedYear)"
+                                         Variant="Variant.Outlined"
+                                         Class="mb-4" />
+                    </MudItem>
+
+                    <MudItem xs="12" md="6">
+                        <MudNumericField Label="Stok Buku"
+                                         @bind-Value="updateModel.Stock"
+                                         For="@(() => updateModel.Stock)"
+                                         Variant="Variant.Outlined"
+                                         Class="mb-4" />
+                    </MudItem>
+
+                    <MudItem xs="12">
+                        <MudTextField Label="Deskripsi"
+                                      @bind-Value="updateModel.Description"
+                                      For="@(() => updateModel.Description)"
+                                      Variant="Variant.Outlined"
+                                      Lines="4"
+                                      Class="mb-6" />
+                    </MudItem>
+
+                    <!-- Preview & Input untuk Ganti Gambar (Bebas Versi MudBlazor) -->
+                    <MudItem xs="12">
+                        <MudText Typo="Typo.subtitle2" Class="mb-3 font-weight-bold">Cover Buku Saat Ini</MudText>
+                        
+                        <div class="d-flex align-end gap-4 mb-4">
+                            <!-- Menampilkan Gambar (Preview baru atau Gambar lama) -->
+                            <MudImage Src="@GetImageSource()"
+                                      Alt="Cover Buku"
+                                      Elevation="4"
+                                      Class="rounded-lg"
+                                      Style="width: 120px; height: 160px; object-fit: cover;" />
+                            
+                            <div class="d-flex flex-column">
+                                <div>
+                                    <!-- Tombol pemicu InputFile tersembunyi -->
+                                    <label for="file-upload" class="mud-button-root mud-button mud-button-outlined mud-button-outlined-info mud-button-outlined-size-medium mud-ripple py-2 px-4" style="cursor: pointer;">
+                                        <span class="mud-button-label">
+                                            <MudIcon Icon="@Icons.Material.Filled.CloudUpload" Class="mr-2" />
+                                            Ganti Cover (Opsional)
+                                        </span>
+                                    </label>
+                                    <InputFile id="file-upload" OnChange="OnInputFileChanged" accept=".jpg,.jpeg,.png" style="display: none;" />
+                                </div>
+
+                                @if (selectedImage != null)
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Success" Class="mt-2">
+                                        File baru: @selectedImage.Name
+                                    </MudText>
+                                }
+                                else
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
+                                        *Biarkan kosong jika tidak diganti.
+                                    </MudText>
+                                }
+                            </div>
+                        </div>
+                    </MudItem>
+
+                    <MudItem xs="12" Class="d-flex justify-end gap-3 mt-4">
+                        <MudButton Variant="Variant.Outlined" Color="Color.Default" Href="@($"/books/{Id}")">
+                            Batal
+                        </MudButton>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" ButtonType="ButtonType.Submit" Disabled="isSubmitting">
+                            @if (isSubmitting)
+                            {
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                <span>Menyimpan...</span>
+                            }
+                            else
+                            {
+                                <span>Simpan Perubahan</span>
+                            }
+                        </MudButton>
+                    </MudItem>
+                </MudGrid>
+            </EditForm>
+        </MudPaper>
+    }
+</MudContainer>
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    private UpdateBookDto updateModel = new();
+    private bool isLoading = true;
+    private bool isSubmitting = false;
+    private IBrowserFile? selectedImage;
+
+    // Variabel untuk menampung URL dan Preview Gambar
+    private string? currentImageUrl;
+    private string? previewImageUrl;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // 1. Validasi Akses Admin secara programmatik
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+
+            if (user.Identity == null || !user.Identity.IsAuthenticated)
+            {
+                Navigation.NavigateTo("/login", forceLoad: true);
+                return;
+            }
+
+            var userRole = user.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value
+                           ?? user.FindFirst("role")?.Value;
+
+            if (string.IsNullOrEmpty(userRole) || !userRole.Equals("Admin", StringComparison.OrdinalIgnoreCase))
+            {
+                Snackbar.Add("Akses ditolak! Halaman ini khusus Admin.", Severity.Error);
+                Navigation.NavigateTo("/", forceLoad: true);
+                return;
+            }
+
+            // 2. Muat Data Buku untuk diedit
+            var response = await BookService.GetBookDetailAsync(Id);
+            if (response != null && response.IsSuccess && response.Data != null)
+            {
+                var book = response.Data;
+                
+                // Simpan URL gambar lama dari backend (Asumsi di DTO ada properti ImageUrl)
+                // Jika error karena properti ImageUrl tidak ada, hapus baris ini,
+                // lalu hapus pengecekan currentImageUrl di GetImageSource() di bawah.
+                currentImageUrl = book.ImageUrl;
+
+                updateModel = new UpdateBookDto
+                {
+                    Id = this.Id,
+                    Title = book.Title,
+                    Author = book.Author,
+                    Category = book.Category,
+                    Isbn = book.Isbn ?? string.Empty,
+                    PublishedYear = book.PublishedYear,
+                    Stock = book.Stock,
+                    Description = book.Description ?? string.Empty
+                };
+            }
+            else
+            {
+                Snackbar.Add("Gagal memuat data buku untuk diedit.", Severity.Error);
+                Navigation.NavigateTo("/books");
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Terjadi kesalahan: " + ex.Message, Severity.Error);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task OnInputFileChanged(InputFileChangeEventArgs e)
+    {
+        selectedImage = e.File;
+
+        if (selectedImage != null)
+        {
+            try
+            {
+                // Buat preview gambar baru menggunakan base64 string
+                var format = selectedImage.ContentType;
+                var resizedImage = await selectedImage.RequestImageFileAsync(format, 500, 500);
+                var buffer = new byte[resizedImage.Size];
+                await resizedImage.OpenReadStream().ReadAsync(buffer);
+                
+                previewImageUrl = $"data:{format};base64,{Convert.ToBase64String(buffer)}";
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Gagal memuat preview gambar: {ex.Message}", Severity.Warning);
+            }
+        }
+    }
+
+    private string GetImageSource()
+    {
+        // 1. Jika ada preview gambar baru, tampilkan preview-nya
+        if (!string.IsNullOrEmpty(previewImageUrl))
+            return previewImageUrl;
+
+        // 2. Jika tidak ada gambar baru, tampilkan gambar lama dari backend
+        // (Pastikan URL / port ini sesuai dengan backend Anda)
+        if (!string.IsNullOrEmpty(currentImageUrl))
+            return $"https://localhost:7056{currentImageUrl}";
+
+        // 3. Jika buku aslinya belum punya gambar sama sekali
+        return "/images/default-book.jpg";
+    }
+
+    private async Task HandleUpdateBook()
+    {
+        isSubmitting = true;
+        try
+        {
+            // Kirim model beserta file gambar yang dipilih (bisa null jika tidak diganti)
+            var response = await BookService.UpdateBookAsync(updateModel, selectedImage);
+            
+            if (response != null && response.IsSuccess)
+            {
+                Snackbar.Add("Data buku berhasil diperbarui!", Severity.Success);
+                Navigation.NavigateTo($"/books/{Id}");
+            }
+            else
+            {
+                Snackbar.Add(response?.Message ?? "Gagal memperbarui data buku.", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Terjadi kesalahan jaringan: " + ex.Message, Severity.Error);
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+}

@@ -1,0 +1,181 @@
+﻿@page "/books/{Id:int}"
+@inject IBookService BookService
+@inject IBorrowRequestService BorrowService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+
+@using LibraryManagementSystem.Client.Services
+@using LibraryManagementSystem.Shared.DTOs.Books
+@using Microsoft.AspNetCore.Components.Authorization
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-6 mb-16">
+    <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack" Href="/books" Class="mb-4">
+        Kembali ke Katalog
+    </MudButton>
+
+    @if (isLoading)
+    {
+        <div class="d-flex justify-center my-12">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
+        </div>
+    }
+    else if (book == null)
+    {
+        <MudAlert Severity="Severity.Error" Class="mt-4">Data buku tidak ditemukan atau telah dihapus.</MudAlert>
+    }
+    else
+    {
+        <MudPaper Elevation="3" Class="pa-6 rounded-lg">
+            <MudGrid>
+                <MudItem xs="12" md="4" Class="d-flex flex-column align-center">
+                    <MudImage Src="@(string.IsNullOrEmpty(book.ImageUrl) ? "/images/default-book.jpg" : $"https://localhost:7056{book.ImageUrl}")"
+                              Alt="Cover Buku"
+                              Elevation="4"
+                              Class="rounded-lg mb-4"
+                              Style="max-width: 100%; object-fit: cover;" />
+                    
+                    <MudChip T="string" Color="Color.Info" Size="Size.Small" Class="mb-4">Kategori: @book.Category</MudChip>
+                </MudItem>
+
+                <MudItem xs="12" md="8">
+                    <MudText Typo="Typo.h4" Class="font-weight-bold mb-2">@book.Title</MudText>
+                    <MudText Typo="Typo.subtitle1" Class="mb-1">
+                        <MudIcon Icon="@Icons.Material.Filled.Person" Size="Size.Small" Class="mr-1" /> Penulis: @book.Author
+                    </MudText>
+                    <MudText Typo="Typo.subtitle2" Class="mb-4">
+                        <MudIcon Icon="@Icons.Material.Filled.DateRange" Size="Size.Small" Class="mr-1" /> Tahun Terbit: @book.PublishedYear | ISBN: @(string.IsNullOrEmpty(book.Isbn) ? "-" : book.Isbn)
+                    </MudText>
+                    
+                    <MudDivider Class="my-4" />
+                    
+                    <MudText Typo="Typo.h6" Class="font-weight-bold mb-2">Deskripsi Buku</MudText>
+                    <MudText Typo="Typo.body1" Class="mb-6" Style="line-height: 1.6;">
+                        @(string.IsNullOrEmpty(book.Description) ? "Buku ini tidak memiliki deskripsi." : book.Description)
+                    </MudText>
+
+                    <!-- Status Ketersediaan Diperbarui (Tersedia & Dipinjam) -->
+                    <MudPaper Elevation="0" Class="pa-4 bg-light mb-6 rounded">
+                        <div class="d-flex align-center">
+                            <MudIcon Icon="@Icons.Material.Filled.Inventory2" Color="Color.Default" Class="mr-3" />
+                            <div>
+                                <MudText Typo="Typo.body2">Status Ketersediaan</MudText>
+                                <MudText Typo="Typo.h6" Color="@(book.Stock > 0 ? Color.Success : Color.Error)" Class="font-weight-bold">
+                                    @book.Stock Tersedia
+                                </MudText>
+                            </div>
+                        </div>
+                    </MudPaper>
+
+                    <div class="d-flex flex-column gap-3">
+                        <!-- Tombol Peminjaman: Hanya tampil untuk user yang login dan BUKAN Admin -->
+                        <AuthorizeView>
+                            <Authorized Context="authContext">
+                                @if (!authContext.User.IsInRole("Admin"))
+                                {
+                                    @if (hasPendingRequest)
+                                    {
+                                        <MudAlert Severity="Severity.Warning" Class="mb-2">
+                                            Buku sudah pernah diajukan, mohon tunggu diapprove oleh Admin.
+                                        </MudAlert>
+                                        <MudButton Variant="Variant.Filled" Color="Color.Default" Size="Size.Large" Disabled="true" Class="py-3">
+                                            Menunggu Approval
+                                        </MudButton>
+                                    }
+                                    else if (book.Stock > 0)
+                                    {
+                                        <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Large"
+                                                   Href="@($"/borrow/request/{Id}")"
+                                                   StartIcon="@Icons.Material.Filled.BookmarkAdd"
+                                                   Class="py-3">
+                                            Ajukan Peminjaman
+                                        </MudButton>
+                                    }
+                                    else
+                                    {
+                                        <MudButton Variant="Variant.Filled" Color="Color.Default" Size="Size.Large" Disabled="true" Class="py-3">
+                                            Stok Habis
+                                        </MudButton>
+                                    }
+                                }
+                            </Authorized>
+                            <NotAuthorized>
+                                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Large" Href="/login" Class="py-3">
+                                    Login untuk Meminjam
+                                </MudButton>
+                            </NotAuthorized>
+                        </AuthorizeView>
+
+                        <!-- Tombol khusus Admin -->
+                        <AuthorizeView Roles="Admin">
+                            <Authorized>
+                                <MudButton Variant="Variant.Outlined" Color="Color.Warning" Size="Size.Large" Href="@($"/books/edit/{Id}")" StartIcon="@Icons.Material.Filled.Edit">
+                                    Edit Buku (Admin)
+                                </MudButton>
+                            </Authorized>
+                        </AuthorizeView>
+                    </div>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+    }
+</MudContainer>
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    private BookResponseDto? book;
+    private bool isLoading = true;
+    private bool hasPendingRequest = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // 1. Muat Detail Buku
+            var response = await BookService.GetBookDetailAsync(Id);
+            if (response != null && response.IsSuccess)
+            {
+                book = response.Data;
+            }
+            else
+            {
+                Snackbar.Add(response?.Message ?? "Gagal memuat detail buku.", Severity.Error);
+                return;
+            }
+
+            // 2. Cek apakah user yang login adalah Peminjam
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+
+            if (user.Identity != null && user.Identity.IsAuthenticated)
+            {
+                var userRole = user.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value
+                               ?? user.FindFirst("role")?.Value;
+
+                if (!string.IsNullOrEmpty(userRole) && userRole.Equals("Peminjam", StringComparison.OrdinalIgnoreCase))
+                {
+                    // 3. Ambil riwayat peminjaman user ini
+                    var borrowResponse = await BorrowService.GetMyRequestsAsync();
+                    
+                    if (borrowResponse != null && borrowResponse.IsSuccess && borrowResponse.Data != null)
+                    {
+                        // 4. Cari apakah ada pengajuan untuk buku ini yang statusnya masih Pending
+                        hasPendingRequest = borrowResponse.Data.Any(r =>
+                            r.BookId == Id &&
+                            r.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase));
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Terjadi kesalahan jaringan: " + ex.Message, Severity.Error);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+}

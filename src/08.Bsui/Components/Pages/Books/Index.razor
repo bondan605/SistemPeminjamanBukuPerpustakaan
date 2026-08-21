@@ -1,0 +1,159 @@
+﻿@page "/books"
+@inject IBookService BookService
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@using LibraryManagementSystem.Client.Services
+@using LibraryManagementSystem.Shared.DTOs.Books
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-6 mb-16">
+    <div class="d-flex justify-space-between align-center mb-6">
+        <MudText Typo="Typo.h4" Class="font-weight-bold">Katalog Buku Perpustakaan</MudText>
+        
+        <AuthorizeView Roles="Admin">
+            <Authorized>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" Href="/books/create">
+                    Tambah Buku Baru
+                </MudButton>
+            </Authorized>
+        </AuthorizeView>
+    </div>
+
+    <!-- Fitur Pencarian & Filter -->
+    <MudPaper Elevation="2" Class="pa-4 mb-6 rounded-lg">
+        <MudGrid>
+            <MudItem xs="12" md="12">
+                <MudTextField @bind-Value="searchTerm" 
+                              Label="Cari berdasarkan judul, penulis, atau kategori..." 
+                              Variant="Variant.Outlined" 
+                              Adornment="Adornment.Start" 
+                              AdornmentIcon="@Icons.Material.Filled.Search" 
+                              Immediate="true"
+                              OnKeyUp="HandleSearch" />
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    <!-- Tampilan Loading, Kosong, atau Grid Buku -->
+    @if (isLoading)
+    {
+        <div class="d-flex justify-center my-12">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
+        </div>
+    }
+    else if (books == null || !books.Any())
+    {
+        <MudAlert Severity="Severity.Info" Class="mt-4">Tidak ada buku yang sesuai dengan pencarian Anda.</MudAlert>
+    }
+    else
+    {
+        <MudGrid>
+            @foreach (var book in books)
+            {
+                <MudItem xs="12" sm="6" md="4" lg="3">
+                    <MudCard Elevation="3" Class="d-flex flex-column h-100 rounded-lg hover-card">
+                        <!-- Menampilkan gambar cover atau default -->
+                        <MudCardMedia Image="@(string.IsNullOrEmpty(book.ImageUrl) ? "/images/default-book.jpg" : $"https://localhost:7056{book.ImageUrl}")" 
+                                      Height="250" 
+                                      Style="background-size: cover; background-position: center;" />
+                        
+                        <MudCardContent Class="flex-grow-1">
+                            <MudChip  T="string" Size="Size.Small" Color="Color.Info" Class="mb-2">@book.Category</MudChip>
+                            <MudText Typo="Typo.h6" Class="font-weight-bold mb-1 line-clamp-2" Style="min-height: 60px;">@book.Title</MudText>
+                            <MudText Typo="Typo.body2" Class="mb-2">Oleh: @book.Author</MudText>
+                            <MudText Typo="Typo.caption" Class="d-block mt-auto">
+                                Stok Tersedia: 
+                                <span class="@(book.Stock > 0 ? "text-success font-weight-bold" : "text-error font-weight-bold")">
+                                    @book.Stock
+                                </span>
+                            </MudText>
+                        </MudCardContent>
+                        
+                        <MudCardActions Class="pb-4 px-4">
+                            <MudButton Variant="Variant.Outlined" Color="Color.Primary" FullWidth="true" Href="@($"/books/{book.Id}")">
+                                Lihat Detail
+                            </MudButton>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+
+        <div class="d-flex justify-center mt-8">
+            <MudPagination Color="Color.Primary" Count="@totalPages" Selected="@currentPage" SelectedChanged="PageChanged" />
+        </div>
+    }
+</MudContainer>
+
+<style>
+    .hover-card { transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out; }
+    .hover-card:hover { transform: translateY(-5px); box-shadow: 0 10px 20px rgba(0,0,0,0.1) !important; }
+    .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+</style>
+
+@code {
+    private List<BookResponseDto> books = new();
+    private bool isLoading = true;
+    
+    private string searchTerm = string.Empty;
+    private int currentPage = 1;
+    private int pageSize = 8;
+    private int totalPages = 1;
+
+    private System.Timers.Timer? searchTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadBooksAsync();
+    }
+
+    private async Task LoadBooksAsync()
+    {
+        isLoading = true;
+        try
+        {
+            var result = await BookService.GetPagedBooksAsync(currentPage, pageSize, searchTerm);
+            if (result != null && result.Data != null)
+            {
+                books = result.Data;
+                totalPages = result.TotalPages;
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Gagal memuat data buku: " + ex.Message, Severity.Error);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void HandleSearch(KeyboardEventArgs e)
+    {
+        if (searchTimer != null)
+        {
+            searchTimer.Stop();
+            searchTimer.Dispose();
+        }
+
+        searchTimer = new System.Timers.Timer(500); 
+        searchTimer.Elapsed += async (sender, args) =>
+        {
+            currentPage = 1; 
+            await InvokeAsync(LoadBooksAsync);
+            await InvokeAsync(StateHasChanged);
+        };
+        searchTimer.Start();
+    }
+
+    private async Task PageChanged(int i)
+    {
+        currentPage = i;
+        await LoadBooksAsync();
+    }
+
+    private void GoToDetail(int id)
+    {
+        Navigation.NavigateTo($"/books/{id}");
+    }
+}

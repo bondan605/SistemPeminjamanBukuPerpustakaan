@@ -1,7 +1,109 @@
 ﻿@page "/"
+@inject NavigationManager Navigation
+@inject IBookService BookService
+@using LibraryManagementSystem.Client.Services
+@using LibraryManagementSystem.Shared.DTOs.Books
+<style>
+    .hover-scale { transition: transform 0.3s ease, box-shadow 0.3s ease; }
+    .hover-scale:hover { transform: translateY(-5px); box-shadow: 0 8px 15px rgba(0,0,0,0.1) !important; }
+    .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 48px; }
+</style>
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="pa-0 mb-16">
+    <MudPaper Elevation="0" Class="d-flex align-center justify-center pa-6" Style="height: 60vh; background: linear-gradient(135deg, var(--mud-palette-primary) 0%, var(--mud-palette-info) 100%); border-radius: 0 0 2rem 2rem;">
+        <div class="text-center" style="color: white; max-width: 800px;">
+            <MudIcon Icon="@Icons.Material.Filled.LibraryBooks" Size="Size.Large" Class="mb-4" Style="font-size: 5rem;" />
+            <MudText Typo="Typo.h2" Class="font-weight-bold mb-4">Selamat Datang di LMS</MudText>
+            <MudText Typo="Typo.h5" Class="mb-8" Style="opacity: 0.9;">
+                Temukan ribuan buku menarik dan kembangkan wawasan Anda. Pinjam buku dengan mudah, cepat, dan di mana saja.
+            </MudText>
+            <div class="d-flex justify-center gap-4">
+                <MudButton Variant="Variant.Filled" 
+                           Size="Size.Large" 
+                           Href="/books" 
+                           Class="font-weight-bold px-6 py-3 rounded-pill"
+                           Style="background-color: white; color: var(--mud-palette-primary);">
+                    Jelajahi Semua Buku
+                </MudButton>
+            </div>
+        </div>
+    </MudPaper>
 
-<PageTitle>Home</PageTitle>
+    <MudContainer MaxWidth="MaxWidth.Large" Class="mt-16">
+        <div class="d-flex justify-space-between align-center mb-8">
+            <div>
+                <MudText Typo="Typo.h4" Color="Color.Primary" Class="font-weight-bold">Buku Terbaru</MudText>
+                <MudText Typo="Typo.subtitle1" Style="color: gray;">Koleksi buku terbaru yang baru saja ditambahkan.</MudText>
+            </div>
+            <MudButton Variant="Variant.Text" Color="Color.Primary" EndIcon="@Icons.Material.Filled.ArrowForward" Href="/books">
+                Lihat Semua
+            </MudButton>
+        </div>
 
-<h1>Hello, world!</h1>
+        @if (isLoading)
+        {
+            <div class="d-flex justify-center my-8">
+                <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+            </div>
+        }
+        else if (recentBooks != null && recentBooks.Any())
+        {
+            <MudGrid>
+                @foreach (var book in recentBooks)
+                {
+                    <MudItem xs="12" sm="6" md="3">
+                        <MudCard Elevation="2" Class="h-100 rounded-lg hover-scale">
+                            <MudCardMedia Image="@(string.IsNullOrEmpty(book.ImageUrl) ? "/images/default-book.jpg" : $"https://localhost:7056{book.ImageUrl}")" 
+                                          Height="200" 
+                                          Style="background-size: cover; background-position: center;" />
+                            <MudCardContent>
+                                <MudChip T="string" Size="Size.Small" Color="Color.Info" Class="mb-2">@book.Category</MudChip>
+                                <MudText Typo="Typo.subtitle1" Class="font-weight-bold line-clamp-2">@book.Title</MudText>
+                                <MudText Typo="Typo.body2" Class="mt-2 text-muted">Oleh: @book.Author</MudText>
+                            </MudCardContent>
+                            <MudCardActions>
+                                <MudButton Variant="Variant.Text" Color="Color.Primary" FullWidth="true" Href="@($"/books/{book.Id}")">
+                                    Detail
+                                </MudButton>
+                            </MudCardActions>
+                        </MudCard>
+                    </MudItem>
+                }
+            </MudGrid>
+        }
+        else
+        {
+            <MudAlert Severity="Severity.Info">Belum ada buku yang tersedia.</MudAlert>
+        }
+    </MudContainer>
+</MudContainer>
 
-Welcome to your new app.
+@code {
+    private List<BookResponseDto> recentBooks = new();
+    private bool isLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadRecentBooks();
+    }
+
+    private async Task LoadRecentBooks()
+    {
+        try
+        {
+            var result = await BookService.GetPagedBooksAsync(1, 4, null);
+            
+            if (result != null && result.Data != null)
+            {
+                recentBooks = result.Data;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("Gagal memuat buku terbaru: " + ex.Message);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+}

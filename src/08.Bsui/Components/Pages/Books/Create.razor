@@ -1,0 +1,159 @@
+﻿@page "/books/create"
+@attribute [Authorize(Roles = "Admin")]
+@inject IBookService BookService
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@using LibraryManagementSystem.Client.Services
+@using LibraryManagementSystem.Shared.DTOs.Books
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-6 mb-16">
+    <div class="d-flex align-center mb-6">
+        <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack" Href="/books" Class="mr-4">
+            Kembali
+        </MudButton>
+        <MudText Typo="Typo.h4" Class="font-weight-bold">Tambah Buku Baru</MudText>
+    </div>
+
+    <MudPaper Elevation="3" Class="pa-6 rounded-lg">
+        <EditForm Model="@createRequest" OnValidSubmit="HandleSubmit">
+            <DataAnnotationsValidator />
+            
+            <MudGrid>
+                <!-- Informasi Utama -->
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="createRequest.Title"
+                                  Label="Judul Buku"
+                                  Variant="Variant.Outlined"
+                                  Required="true"
+                                  Class="mb-4" />
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="createRequest.Author"
+                                  Label="Penulis"
+                                  Variant="Variant.Outlined"
+                                  Required="true"
+                                  Class="mb-4" />
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="createRequest.Category"
+                                  Label="Kategori"
+                                  Variant="Variant.Outlined"
+                                  Required="true"
+                                  Class="mb-4" />
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="createRequest.Isbn"
+                                  Label="ISBN"
+                                  Variant="Variant.Outlined"
+                                  Class="mb-4" />
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudNumericField @bind-Value="createRequest.PublishedYear"
+                                     Label="Tahun Terbit"
+                                     Variant="Variant.Outlined"
+                                     Required="true"
+                                     Class="mb-4" />
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudNumericField @bind-Value="createRequest.Stock"
+                                     Label="Stok Buku"
+                                     Variant="Variant.Outlined"
+                                     Min="0"
+                                     Required="true"
+                                     Class="mb-4" />
+                </MudItem>
+
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="createRequest.Description"
+                                  Label="Deskripsi Buku"
+                                  Variant="Variant.Outlined"
+                                  Lines="4"
+                                  Class="mb-4" />
+                </MudItem>
+
+                <!-- Bagian Upload Gambar Cover -->
+                <MudItem xs="12">
+                    <MudText Typo="Typo.subtitle1" Class="font-weight-bold mb-2">Cover Buku (Maks. 2MB)</MudText>
+                    <InputFile id="fileInput" OnChange="UploadFiles" accept=".jpg, .jpeg, .png" hidden />
+                    
+                    <div class="d-flex align-center gap-4 mb-4">
+                        <MudButton HtmlTag="label"
+                                   Variant="Variant.Filled"
+                                   Color="Color.Secondary"
+                                   StartIcon="@Icons.Material.Filled.CloudUpload"
+                                   for="fileInput">
+                            Pilih Gambar Cover
+                        </MudButton>
+                        @if (selectedFile != null)
+                        {
+                            <MudText Typo="Typo.body2" Color="Color.Success">File dipilih: @selectedFile.Name</MudText>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">Belum ada file dipilih</MudText>
+                        }
+                    </div>
+                </MudItem>
+
+                <!-- Tombol Aksi -->
+                <MudItem xs="12" Class="d-flex justify-end gap-4 mt-4">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Default" Href="/books">Batal</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" ButtonType="ButtonType.Submit" Disabled="isSubmitting">
+                        @if (isSubmitting)
+                        {
+                            <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true" />
+                            <MudText Class="ms-2">Menyimpan...</MudText>
+                        }
+                        else
+                        {
+                            <text>Simpan Buku</text>
+                        }
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+        </EditForm>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private CreateBookRequest createRequest = new() { Stock = 1, PublishedYear = DateTime.Now.Year };
+    private IBrowserFile? selectedFile;
+    private bool isSubmitting = false;
+
+    private void UploadFiles(InputFileChangeEventArgs e)
+    {
+        selectedFile = e.File;
+    }
+
+    private async Task HandleSubmit()
+    {
+        isSubmitting = true;
+        try
+        {
+            var result = await BookService.CreateBookAsync(createRequest, selectedFile);
+
+            if (result != null && result.IsSuccess)
+            {
+                Snackbar.Add("Buku berhasil ditambahkan ke katalog!", Severity.Success);
+                Navigation.NavigateTo("/books");
+            }
+            else
+            {
+                Snackbar.Add(result?.Message ?? "Gagal menambahkan buku.", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Terjadi kesalahan sistem: " + ex.Message, Severity.Error);
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+}

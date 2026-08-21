@@ -1,0 +1,238 @@
+﻿@page "/admin/requests"
+@using LibraryManagementSystem.Shared.DTOs.Admin
+@using LibraryManagementSystem.Shared.Wrappers
+@using LibraryManagementSystem.Client.Services
+@using LibraryManagementSystem.Application.Features.Admin.Commands
+@inject IAdminService AdminService
+@inject ISnackbar Snackbar
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-8 mb-16">
+    <div class="d-flex justify-space-between align-center mb-6">
+        <div>
+            <MudText Typo="Typo.h4" Class="font-weight-bold">Kelola Peminjaman Buku</MudText>
+            <MudText Typo="Typo.subtitle1">Setujui atau tolak pengajuan peminjaman buku dari seluruh pengguna.</MudText>
+        </div>
+        <div>
+            <!-- Tombol Export to Excel -->
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Success"
+                       StartIcon="@Icons.Material.Filled.TableChart"
+                       OnClick="ExportExcel"
+                       Disabled="isExporting">
+                @if (isExporting)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    <span>Mengunduh...</span>
+                }
+                else
+                {
+                    <span>Export Excel</span>
+                }
+            </MudButton>
+        </div>
+    </div>
+
+    <!-- Tabel dengan ServerData untuk Paging (5 baris), Filter, dan Search -->
+    <MudTable ServerData="@LoadServerData"
+              Hover="true"
+              Elevation="3"
+              Class="rounded-lg pa-4"
+              @ref="table"
+              RowsPerPage="5"
+              PageSizeOptions="new int[] { 5, 10, 25, 50 }">
+        <ToolBarContent>
+            <MudText Typo="Typo.h6">Daftar Seluruh Pengajuan</MudText>
+            <MudSpacer />
+            <!-- Kotak Pencarian -->
+            <MudTextField T="string"
+                          ValueChanged="@(s => OnSearch(s))"
+                          Placeholder="Cari peminjam / judul buku..."
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          IconSize="Size.Medium"
+                          Immediate="true"
+                          Class="mt-0" />
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh>Peminjam</MudTh>
+            <MudTh>Judul Buku</MudTh>
+            <MudTh>Tanggal Request</MudTh>
+            <MudTh>Status</MudTh>
+            <MudTh Style="text-align:right;">Aksi</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Peminjam">@context.UserName</MudTd>
+            <MudTd DataLabel="Judul Buku">@context.BookTitle</MudTd>
+            <MudTd DataLabel="Tanggal Request">@context.RequestDate.ToString("dd MMM yyyy")</MudTd>
+            <MudTd DataLabel="Status">
+                @if (context.Status != null && context.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase))
+                {
+                    <MudChip T="string" Color="Color.Warning" Size="Size.Small">Menunggu</MudChip>
+                }
+                else if (context.Status != null && (context.Status.Equals("Approved", StringComparison.OrdinalIgnoreCase) || context.Status.Equals("Disetujui", StringComparison.OrdinalIgnoreCase)))
+                {
+                    <MudChip T="string" Color="Color.Success" Size="Size.Small">Disetujui</MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Color="Color.Error" Size="Size.Small">@context.Status</MudChip>
+                }
+            </MudTd>
+
+            <MudTd DataLabel="Aksi" Style="text-align:right;">
+                @if (context.Status != null && context.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase))
+                {
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Success"
+                               Size="Size.Small"
+                               Class="mr-2"
+                               StartIcon="@Icons.Material.Filled.Check"
+                               OnClick="@(() => ProcessApproval(context.Id, true))">
+                        Setuju
+                    </MudButton>
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Error"
+                               Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.Close"
+                               OnClick="@(() => ProcessApproval(context.Id, false))">
+                        Tolak
+                    </MudButton>
+                }
+                else
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Success">Selesai Diproses</MudText>
+                }
+            </MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager RowsPerPageString="Baris per halaman:" />
+        </PagerContent>
+    </MudTable>
+</MudContainer>
+
+@code {
+    private MudTable<BorrowRequestDto> table = default!;
+    private string searchString = "";
+    private bool isExporting = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // 1. Validasi Akses Admin
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity == null || !user.Identity.IsAuthenticated)
+        {
+            Navigation.NavigateTo("/login", forceLoad: true);
+            return;
+        }
+
+        var userRole = user.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value
+                       ?? user.FindFirst("role")?.Value;
+
+        if (string.IsNullOrEmpty(userRole) || !userRole.Equals("Admin", StringComparison.OrdinalIgnoreCase))
+        {
+            Snackbar.Add("Akses ditolak! Halaman ini khusus Admin.", Severity.Error);
+            Navigation.NavigateTo("/", forceLoad: true);
+            return;
+        }
+    }
+
+    // Fungsi untuk meload data secara server-side paging menggunakan AdminService
+    private async Task<TableData<BorrowRequestDto>> LoadServerData(TableState state, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await AdminService.GetPagedBorrowRequestsAsync(
+                pageNumber: state.Page + 1, // MudTable index halaman mulai dari 0, backend dari 1
+                pageSize: state.PageSize,
+                searchTerm: searchString
+            );
+
+            if (result != null)
+            {
+                return new TableData<BorrowRequestDto>()
+                {
+                    TotalItems = result.TotalRecords,
+                    Items = result.Data
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Gagal memuat data peminjaman: " + ex.Message, Severity.Error);
+        }
+
+        return new TableData<BorrowRequestDto>() { TotalItems = 0, Items = new List<BorrowRequestDto>() };
+    }
+
+    // Fungsi saat kotak pencarian diketik
+    private void OnSearch(string text)
+    {
+        searchString = text;
+        table.ReloadServerData(); // Refresh isi tabel berdasarkan kata kunci pencarian
+    }
+
+    // Fungsi untuk mengeksekusi tombol Setuju / Tolak (Approval)
+    private async Task ProcessApproval(int requestId, bool isApproved)
+    {
+        var command = new ApproveBorrowRequestCommand
+        {
+            RequestId = requestId,
+            IsApproved = isApproved
+        };
+
+        var response = await AdminService.ApproveRequestAsync(command);
+        if (response != null && response.IsSuccess)
+        {
+            Snackbar.Add(isApproved ? "Peminjaman berhasil disetujui." : "Peminjaman ditolak.", Severity.Success);
+            await table.ReloadServerData(); // Refresh data tabel agar statusnya ter-update secara otomatis
+        }
+        else
+        {
+            Snackbar.Add(response?.Message ?? "Gagal memproses aksi.", Severity.Error);
+        }
+    }
+
+    // Fungsi untuk mendownload file Excel dari backend
+    private async Task ExportExcel()
+    {
+        isExporting = true;
+        try
+        {
+            var fileBytes = await AdminService.ExportExcelAsync();
+            if (fileBytes != null && fileBytes.Length > 0)
+            {
+                // Konversi byte array ke stream di browser menggunakan JSInterop untuk memicu download otomatis
+                var fileName = $"Data_Peminjaman_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx";
+                var base64 = Convert.ToBase64String(fileBytes);
+                
+                await JS.InvokeVoidAsync("eval", $@"
+                    const link = document.createElement('a');
+                    link.href = 'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{base64}';
+                    link.download = '{fileName}';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                ");
+
+                Snackbar.Add("Berhasil mengunduh data Excel.", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("Gagal mengunduh file atau data kosong.", Severity.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Terjadi kesalahan saat ekspor Excel: " + ex.Message, Severity.Error);
+        }
+        finally
+        {
+            isExporting = false;
+        }
+    }
+}

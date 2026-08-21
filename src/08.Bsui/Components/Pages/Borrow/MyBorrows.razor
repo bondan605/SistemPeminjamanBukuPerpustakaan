@@ -1,0 +1,150 @@
+﻿@page "/my-borrows"
+@inject IBorrowRequestService BorrowService
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@using LibraryManagementSystem.Client.Services
+@using LibraryManagementSystem.Shared.DTOs.BorrowRequests
+@inject AuthenticationStateProvider AuthStateProvider
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-8 mb-16">
+    <div class="d-flex justify-space-between align-center mb-6">
+        <div>
+            <MudText Typo="Typo.h4" Class="font-weight-bold">Riwayat Peminjaman Saya</MudText>
+            <MudText Typo="Typo.subtitle1">Daftar buku yang sedang atau pernah Anda pinjam.</MudText>
+        </div>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.LibraryBooks" Href="/books">
+            Pinjam Buku Lain
+        </MudButton>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="d-flex justify-center my-12">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
+        </div>
+    }
+    else if (myRequests == null || !myRequests.Any())
+    {
+        <MudPaper Elevation="0" Class="pa-8 text-center bg-light rounded-lg border-dashed mud-border-lines-default border-2">
+            <MudIcon Icon="@Icons.Material.Filled.AutoStories" Size="Size.Large" Color="Color.Secondary" Class="mb-4" Style="font-size: 4rem;" />
+            <MudText Typo="Typo.h6" Class="mb-2">Belum Ada Riwayat Peminjaman</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">Anda belum pernah mengajukan peminjaman buku. Ayo mulai membaca!</MudText>
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="/books">Jelajahi Katalog</MudButton>
+        </MudPaper>
+    }
+    else
+    {
+        <MudTable Items="myRequests" Elevation="3" Hover="true" Breakpoint="Breakpoint.Sm" Class="rounded-lg">
+            <HeaderContent>
+                <MudTh><MudTableSortLabel SortBy="new Func<BorrowRequestResponseDto, object>(x => x.Id)">ID</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel SortBy="new Func<BorrowRequestResponseDto, object>(x => x.BookTitle)">Judul Buku</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel SortBy="new Func<BorrowRequestResponseDto, object>(x => x.BorrowDate)">Tgl Pinjam</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel SortBy="new Func<BorrowRequestResponseDto, object>(x => x.ReturnDate)">Tgl Kembali</MudTableSortLabel></MudTh>
+                <MudTh>Status</MudTh>
+                <MudTh Style="text-align:center;">Aksi</MudTh>
+            </HeaderContent>
+            <RowTemplate Context="borrow">
+                <MudTd DataLabel="ID">#@borrow.Id</MudTd>
+                <MudTd DataLabel="Judul Buku" Class="font-weight-bold">@borrow.BookTitle</MudTd>
+                <MudTd DataLabel="Tgl Pinjam">@borrow.BorrowDate.ToString("dd MMM yyyy")</MudTd>
+                <MudTd DataLabel="Tgl Kembali">@borrow.ReturnDate.ToString("dd MMM yyyy")</MudTd>
+                <MudTd DataLabel="Status">
+                    <MudChip T="string" Size="Size.Small" Color="@GetStatusColor(borrow.Status)" Variant="Variant.Filled">
+                        @borrow.Status
+                    </MudChip>
+                </MudTd>
+                <MudTd DataLabel="Aksi" Style="text-align:center;">
+                    <!-- Tombol Detail mengarah ke halaman detail peminjaman (jika ada) atau kembali ke detail buku -->
+                    <MudTooltip Text="Lihat Detail Buku">
+                        <MudIconButton Icon="@Icons.Material.Filled.Info" Color="Color.Primary" OnClick="@(() => Navigation.NavigateTo($"/books/{borrow.BookId}"))" />
+                    </MudTooltip>
+                </MudTd>
+            </RowTemplate>
+            <PagerContent>
+                <MudTablePager PageSizeOptions="new int[] { 5, 10, 25 }" InfoFormat="{first_item}-{last_item} dari {all_items}" />
+            </PagerContent>
+        </MudTable>
+    }
+</MudContainer>
+
+@code {
+    private List<BorrowRequestResponseDto> myRequests = new();
+    private bool isLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // 1. Ambil status autentikasi user saat ini
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        // 2. Validasi: Cek apakah user sudah login
+        if (user.Identity == null || !user.Identity.IsAuthenticated)
+        {
+            Navigation.NavigateTo("/login", forceLoad: true);
+            return;
+        }
+
+        // 3. Validasi KHUSUS ROLE PEMINJAM
+        // Mendeteksi klaim role, baik dengan key standar ClaimTypes.Role maupun key string "role" / "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
+        var userRole = user.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value 
+                       ?? user.FindFirst("role")?.Value;
+
+        // Jika user bukan Peminjam (misal Admin), tolak akses atau lempar ke halaman lain
+        if (string.IsNullOrEmpty(userRole) || !userRole.Equals("Peminjam", StringComparison.OrdinalIgnoreCase))
+        {
+            Snackbar.Add("Akses ditolak! Halaman ini khusus untuk Peminjam.", Severity.Error);
+            
+            // Jika dia Admin, arahkan kembali ke dashboard admin, atau ke halaman utama jika role lain
+            if (userRole != null && userRole.Equals("Admin", StringComparison.OrdinalIgnoreCase))
+            {
+                Navigation.NavigateTo("/admin/dashboard", forceLoad: true);
+            }
+            else
+            {
+                Navigation.NavigateTo("/", forceLoad: true);
+            }
+            return;
+        }
+
+        // 4. Jika sudah lolos validasi sebagai Peminjam, muat datanya
+        await LoadMyRequests();
+    }
+
+    private async Task LoadMyRequests()
+    {
+        try
+        {
+            var response = await BorrowService.GetMyRequestsAsync();
+            if (response != null && response.IsSuccess)
+            {
+                myRequests = response.Data?.OrderByDescending(x => x.Id).ToList() ?? new List<BorrowRequestResponseDto>();
+            }
+            else
+            {
+                Snackbar.Add(response?.Message ?? "Gagal memuat data riwayat peminjaman.", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Terjadi kesalahan jaringan: " + ex.Message, Severity.Error);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private Color GetStatusColor(string status)
+    {
+        if (string.IsNullOrWhiteSpace(status)) return Color.Default;
+        
+        return status.ToLower() switch
+        {
+            "pending" => Color.Warning,
+            "approved" => Color.Success,
+            "rejected" => Color.Error,
+            "returned" => Color.Info,
+            _ => Color.Default
+        };
+    }
+}

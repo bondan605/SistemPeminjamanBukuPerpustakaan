@@ -1,0 +1,217 @@
+﻿@page "/borrow/request/{BookId:int}"
+@inject IBookService BookService
+@inject IBorrowRequestService BorrowService
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@inject AuthenticationStateProvider AuthStateProvider
+@using LibraryManagementSystem.Client.Services
+@using LibraryManagementSystem.Shared.DTOs.Books
+@using LibraryManagementSystem.Shared.DTOs.BorrowRequests
+@using Microsoft.AspNetCore.Components.Authorization
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-8 mb-16">
+    <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack" OnClick="GoBack" Class="mb-4">
+        Kembali
+    </MudButton>
+
+    @if (isLoadingBook)
+    {
+        <div class="d-flex justify-center my-8">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+        </div>
+    }
+    else if (book == null)
+    {
+        <MudAlert Severity="Severity.Error">Buku tidak ditemukan.</MudAlert>
+    }
+    else
+    {
+        <MudPaper Elevation="3" Class="pa-6 rounded-lg">
+            <div class="d-flex align-center mb-6">
+                <MudIcon Icon="@Icons.Material.Filled.BookmarkAdd" Color="Color.Primary" Size="Size.Large" Class="mr-3" />
+                <div>
+                    <MudText Typo="Typo.h5" Class="font-weight-bold">Form Pengajuan Peminjaman</MudText>
+                    <MudText Typo="Typo.body2">Mohon isi detail peminjaman di bawah ini</MudText>
+                </div>
+            </div>
+
+            <MudPaper Elevation="0" Class="pa-4 bg-light mb-6 rounded border-solid border-2 mud-border-primary">
+                <MudText Typo="Typo.subtitle2" Color="Color.Primary">Buku yang akan dipinjam:</MudText>
+                <MudText Typo="Typo.h6" Class="font-weight-bold line-clamp-1">@book.Title</MudText>
+                <MudText Typo="Typo.body2">Oleh: @book.Author</MudText>
+            </MudPaper>
+
+            <EditForm Model="borrowModel" OnValidSubmit="SubmitBorrowRequest">
+                <DataAnnotationsValidator />
+
+                <MudGrid>
+                    <MudItem xs="12" sm="6">
+                        <MudDatePicker Label="Tanggal Pinjam"
+                                       Date="@borrowModel.BorrowDate"
+                                       DateChanged="@((DateTime? date) => { if(date.HasValue) borrowModel.BorrowDate = date.Value; })"
+                                       Variant="Variant.Outlined"
+                                       Required="true"
+                                       DisableToolbar="true" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudDatePicker Label="Tanggal Kembali"
+                                       Date="@borrowModel.ReturnDate"
+                                       DateChanged="@((DateTime? date) => { if(date.HasValue) borrowModel.ReturnDate = date.Value; })"
+                                       Variant="Variant.Outlined"
+                                       Required="true"
+                                       MinDate="@borrowModel.BorrowDate"
+                                       DisableToolbar="true" />
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudTextField @bind-Value="borrowModel.Notes"
+                                      Label="Catatan Tambahan (Opsional)"
+                                      Variant="Variant.Outlined"
+                                      Lines="3"
+                                      Placeholder="Misal: Untuk keperluan skripsi..." />
+                    </MudItem>
+                </MudGrid>
+
+                <div class="d-flex justify-end mt-6">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Default" Class="mr-3" OnClick="GoBack" Disabled="isSubmitting">
+                        Batal
+                    </MudButton>
+                    <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Disabled="isSubmitting">
+                        @if (isSubmitting)
+                        {
+                            <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true" />
+                            <MudText Class="ms-2">Mengirim...</MudText>
+                        }
+                        else
+                        {
+                            <MudText>Kirim Pengajuan</MudText>
+                        }
+                    </MudButton>
+                </div>
+            </EditForm>
+        </MudPaper>
+    }
+</MudContainer>
+
+<style>
+    .line-clamp-1 {
+        display: -webkit-box;
+        -webkit-line-clamp: 1;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+</style>
+
+@code {
+    [Parameter]
+    public int BookId { get; set; }
+
+    private BookResponseDto? book;
+    
+    private CreateBorrowRequestDto borrowModel = new CreateBorrowRequestDto
+    {
+        BorrowDate = DateTime.Today,
+        ReturnDate = DateTime.Today.AddDays(7)
+    };
+    
+    private bool isLoadingBook = true;
+    private bool isSubmitting = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // 1. Validasi Autentikasi Manual (Mencegah error router bawaan Blazor)
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity == null || !user.Identity.IsAuthenticated)
+        {
+            Navigation.NavigateTo("/login", forceLoad: true);
+            return;
+        }
+
+        // 2. Validasi Role Khusus Peminjam
+        var userRole = user.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value
+                       ?? user.FindFirst("role")?.Value;
+
+        if (string.IsNullOrEmpty(userRole) || !userRole.Equals("Peminjam", StringComparison.OrdinalIgnoreCase))
+        {
+            Snackbar.Add("Akses ditolak! Halaman ini khusus untuk Peminjam.", Severity.Error);
+            
+            if (userRole != null && userRole.Equals("Admin", StringComparison.OrdinalIgnoreCase))
+            {
+                Navigation.NavigateTo("/admin/dashboard", forceLoad: true);
+            }
+            else
+            {
+                Navigation.NavigateTo("/", forceLoad: true);
+            }
+            return;
+        }
+
+        // 3. Jika aman, muat detail buku
+        borrowModel.BookId = BookId;
+        await LoadBookDetail();
+    }
+
+    private async Task LoadBookDetail()
+    {
+        try
+        {
+            var response = await BookService.GetBookDetailAsync(BookId);
+            if (response != null && response.IsSuccess)
+            {
+                book = response.Data;
+            }
+            else
+            {
+                Snackbar.Add("Gagal memuat informasi buku.", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Terjadi kesalahan jaringan: " + ex.Message, Severity.Error);
+        }
+        finally
+        {
+            isLoadingBook = false;
+        }
+    }
+
+    private async Task SubmitBorrowRequest()
+    {
+        if (borrowModel.ReturnDate <= borrowModel.BorrowDate)
+        {
+            Snackbar.Add("Tanggal kembali harus lebih besar dari tanggal pinjam.", Severity.Warning);
+            return;
+        }
+
+        isSubmitting = true;
+        try
+        {
+            var response = await BorrowService.CreateRequestAsync(borrowModel);
+
+            if (response.IsSuccess)
+            {
+                Snackbar.Add("Pengajuan peminjaman berhasil dikirim! Menunggu persetujuan Admin.", Severity.Success);
+                Navigation.NavigateTo("/my-borrows");
+            }
+            else
+            {
+                var errorMessage = string.Join(", ", response.Errors ?? new List<string> { response.Message });
+                Snackbar.Add(errorMessage, Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add("Terjadi kesalahan sistem: " + ex.Message, Severity.Error);
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    private void GoBack()
+    {
+        Navigation.NavigateTo($"/books/{BookId}");
+    }
+}

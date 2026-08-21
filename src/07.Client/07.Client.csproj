@@ -1,11 +1,15 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\04.Application\04.Application.csproj" />
-	<ProjectReference Include="..\06.WebAPI\06.WebAPI.csproj" />
-	<ProjectReference Include="..\03.Shared\03.Shared.csproj." />
+	  <ProjectReference Include="..\03.Shared\03.Shared.csproj" />
+	  <ProjectReference Include="..\04.Application\04.Application.csproj" />
   </ItemGroup>
 
+	<ItemGroup>
+		<FrameworkReference Include="Microsoft.AspNetCore.App" />
+		<PackageReference Include="Blazored.LocalStorage" Version="4.5.0" />
+	</ItemGroup>
+	
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
